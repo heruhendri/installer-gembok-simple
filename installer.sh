@@ -1,152 +1,164 @@
 #!/bin/bash
 
-# --- Konfigurasi ---
-# Ganti dengan domain atau IP server Anda
-DOMAIN_NAME="your_domain.com"
-# Ganti dengan direktori root web Anda (misalnya /var/www/gembok)
-WEB_ROOT="/var/www/gembok"
-# Ganti dengan nama database, user, dan password yang Anda inginkan
-DB_NAME="gembok_db"
-DB_USER="gembok_user"
-DB_PASS="your_strong_password"
-# Ganti dengan username dan password admin Gembok yang Anda inginkan
-ADMIN_USER="admin"
-ADMIN_PASS="your_admin_password"
-# Ganti dengan username dan password portal pelanggan yang Anda inginkan
-PORTAL_USER="user"
-PORTAL_PASS="your_portal_password"
-# Ganti dengan username dan password portal sales yang Anda inginkan
-SALES_USER="sales"
-SALES_PASS="your_sales_password"
+clear
+echo "🚀 INSTALLER GEMBOK-SIMPLE (FINAL FIX VERSION)"
 
-# --- Update Sistem ---
-echo "Memperbarui daftar paket..."
-sudo apt update
-sudo apt upgrade -y
+# =============================
+# INPUT
+# =============================
+read -p "Masukkan domain (contoh: gembok.domain.com): " DOMAIN
+read -p "Masukkan email SSL: " EMAIL
 
-# --- Instal Nginx ---
-echo "Menginstal Nginx..."
-sudo apt install nginx -y
+WEBROOT="/var/www/gembok-simple"
 
-# --- Instal PHP dan Ekstensinya ---
-echo "Menginstal PHP dan ekstensi yang diperlukan..."
-sudo apt install php-fpm php-mysql php-mbstring php-xml php-curl php-zip -y
+# =============================
+# UPDATE
+# =============================
+echo "🔄 Update system..."
+apt update -y && apt upgrade -y
 
-# --- Instal MySQL Server ---
-echo "Menginstal MySQL Server..."
-sudo apt install mysql-server -y
+# =============================
+# INSTALL PACKAGE
+# =============================
+echo "📦 Install dependency..."
+apt install -y nginx mysql-server git curl unzip software-properties-common
 
-# Konfigurasi MySQL (memerlukan interaksi manual atau skrip terpisah untuk otomatisasi penuh)
-echo "Silakan konfigurasikan MySQL secara manual atau gunakan skrip konfigurasi MySQL terpisah."
-echo "Setelah MySQL terinstal, jalankan: sudo mysql_secure_installation"
+apt install -y php php-fpm php-mysql php-cli php-curl php-xml php-mbstring \
+php-gd php-intl php-zip php-bcmath
 
-# --- Buat Direktori Aplikasi ---
-echo "Membuat direktori aplikasi di $WEB_ROOT..."
-sudo mkdir -p $WEB_ROOT
-sudo chown -R www-data:www-data $WEB_ROOT
-sudo chmod -R 755 $WEB_ROOT
+# =============================
+# INSTALL SSL
+# =============================
+apt install -y certbot python3-certbot-nginx
 
-# --- Unduh Gembok Simple ---
-echo "Mengunduh Gembok Simple dari GitHub..."
-cd /tmp
-git clone https://github.com/heruhendri/gembok-simple.git gembok-simple-repo
-sudo mv gembok-simple-repo/* $WEB_ROOT/
-sudo rm -rf gembok-simple-repo
-cd $WEB_ROOT
+# =============================
+# SERVICE START
+# =============================
+systemctl enable nginx
+systemctl restart nginx
 
-# --- Konfigurasi Database ---
-echo "Membuat database dan user MySQL..."
-# Skrip ini tidak akan mengotomatiskan konfigurasi MySQL karena memerlukan password root.
-# Anda perlu menjalankan perintah berikut secara manual setelah MySQL terinstal:
-#
-# sudo mysql -u root -p
-# CREATE DATABASE $DB_NAME;
-# CREATE USER '$DB_USER'@'localhost' IDENTIFIED BY '$DB_PASS';
-# GRANT ALL PRIVILEGES ON $DB_NAME.* TO '$DB_USER'@'localhost';
-# FLUSH PRIVILEGES;
-# EXIT;
-#
-# Kemudian, edit file includes/config.php dan perbarui DB_HOST, DB_NAME, DB_USER, DB_PASS.
+systemctl enable mysql
+systemctl restart mysql
 
-echo "Silakan buat database dan user MySQL secara manual."
-echo "Setelah itu, edit file: $WEB_ROOT/includes/config.php"
-echo "Perbarui nilai DB_NAME, DB_USER, dan DB_PASS sesuai dengan yang Anda buat."
+systemctl enable php*-fpm
+systemctl restart php*-fpm
 
-# --- Konfigurasi Nginx ---
-echo "Membuat konfigurasi Nginx untuk Gembok Simple..."
-sudo tee /etc/nginx/sites-available/gembok <<EOF
+# =============================
+# CLONE PROJECT
+# =============================
+echo "📥 Clone repo..."
+rm -rf $WEBROOT
+git clone https://github.com/heruhendri/gembok-simple.git $WEBROOT
+
+chown -R www-data:www-data $WEBROOT
+chmod -R 755 $WEBROOT
+
+# =============================
+# DETEKSI PHP
+# =============================
+PHP_VERSION=$(php -r "echo PHP_MAJOR_VERSION.'.'.PHP_MINOR_VERSION;")
+echo "📌 PHP Version: $PHP_VERSION"
+
+# =============================
+# NGINX CONFIG (FIX + SECURITY)
+# =============================
+echo "⚙️ Setup NGINX..."
+
+cat > /etc/nginx/sites-available/gembok <<EOF
 server {
     listen 80;
-    server_name $DOMAIN_NAME;
+    server_name $DOMAIN;
 
-    root $WEB_ROOT;
-    index index.php index.html index.htm;
+    root $WEBROOT;
+    index index.php index.html;
 
+    # =============================
+    # SECURITY BLOCK
+    # =============================
+
+    # Block hidden files (.env, .git, dll)
+    location ~ /\.(htaccess|env|git) {
+        deny all;
+    }
+
+    # Block sensitive directories
+    location ~ ^/(logs)/ {
+        deny all;
+    }
+
+    location ~ ^/includes/ {
+        deny all;
+    }
+
+    # Disable PHP execution di uploads
+    location ~ ^/uploads/.*\.php$ {
+        deny all;
+    }
+
+    # Allow akses file upload (gambar dll)
+    location ^~ /uploads/ {
+        try_files \$uri \$uri/ =404;
+    }
+
+    # Block config files
+    location ~* \.(ini|log|conf)$ {
+        deny all;
+    }
+
+    # =============================
+    # MAIN ROUTING
+    # =============================
     location / {
         try_files \$uri \$uri/ /index.php?\$query_string;
     }
 
+    # =============================
+    # PHP HANDLER (ANTI 502)
+    # =============================
     location ~ \.php$ {
         include snippets/fastcgi-php.conf;
-        fastcgi_pass unix:/var/run/php/php7.4-fpm.sock; # Sesuaikan versi PHP jika perlu
+        fastcgi_pass unix:/run/php/php$PHP_VERSION-fpm.sock;
         fastcgi_param SCRIPT_FILENAME \$document_root\$fastcgi_script_name;
         include fastcgi_params;
     }
 
-    location ~ /\.ht {
-        deny all;
-    }
-
-    # Izinkan akses ke direktori assets, uploads, dll.
-    location ~ ^/(assets|uploads|images|css|js|fonts)/ {
-        try_files \$uri =404;
-    }
-
-    # Lokasi untuk file install.php (jika masih ada setelah instalasi)
-    location /install.php {
-        try_files \$uri =404;
-    }
+    # =============================
+    # LIMIT & HARDENING
+    # =============================
+    client_max_body_size 20M;
+    server_tokens off;
 }
 EOF
 
-echo "Menghapus konfigurasi default Nginx..."
-sudo rm /etc/nginx/sites-enabled/default
+ln -sf /etc/nginx/sites-available/gembok /etc/nginx/sites-enabled/
 
-echo "Membuat symbolic link untuk konfigurasi Gembok..."
-sudo ln -s /etc/nginx/sites-available/gembok /etc/nginx/sites-enabled/
+nginx -t && systemctl reload nginx
 
-echo "Menguji konfigurasi Nginx..."
-sudo nginx -t
+# =============================
+# FIREWALL
+# =============================
+echo "🔥 Setup firewall..."
+ufw allow OpenSSH
+ufw allow 'Nginx Full'
+ufw --force enable
 
-echo "Memuat ulang Nginx..."
-sudo systemctl reload nginx
+# =============================
+# SSL
+# =============================
+echo "🔒 Setup SSL..."
+certbot --nginx -d $DOMAIN --non-interactive --agree-tos -m $EMAIL --redirect
 
-# --- Konfigurasi PHP-FPM ---
-# Pastikan PHP-FPM mendengarkan pada socket yang benar di konfigurasi Nginx
-# Jika Anda menggunakan versi PHP yang berbeda, sesuaikan baris 'fastcgi_pass' di atas.
-echo "Memastikan PHP-FPM berjalan..."
-sudo systemctl enable php7.4-fpm # Sesuaikan versi PHP jika perlu
-sudo systemctl start php7.4-fpm # Sesuaikan versi PHP jika perlu
+# =============================
+# FINAL CHECK
+# =============================
+echo "🔍 Validasi PHP Extension..."
+php -m | grep -E "gd|intl"
 
-# --- Instalasi Web Installer (jika ada) ---
-# Skrip ini mengasumsikan Anda akan menjalankan install.php secara manual
-# atau Anda perlu mengotomatiskan langkah-langkah di install.php.
-echo "Skrip installer selesai."
-echo "Langkah selanjutnya:"
-echo "1. Konfigurasikan database MySQL secara manual jika belum dilakukan."
-echo "2. Edit file: $WEB_ROOT/includes/config.php dan perbarui pengaturan database."
-echo "3. Akses http://$DOMAIN_NAME/install.php di browser Anda untuk menyelesaikan instalasi."
-echo "4. Setelah instalasi selesai, hapus file install.php dari server Anda."
-echo "5. Atur hak akses yang sesuai untuk direktori uploads, logs, dll."
-
-# --- Pengaturan Hak Akses Tambahan (Contoh) ---
-echo "Mengatur hak akses untuk direktori penting..."
-sudo chown -R www-data:www-data $WEB_ROOT/uploads
-sudo chown -R www-data:www-data $WEB_ROOT/logs
-sudo chown -R www-data:www-data $WEB_ROOT/backups
-sudo chmod -R 755 $WEB_ROOT/uploads
-sudo chmod -R 755 $WEB_ROOT/logs
-sudo chmod -R 755 $WEB_ROOT/backups
-
-echo "Skrip installer Gembok Simple selesai dijalankan."
-echo "Silakan lanjutkan dengan langkah-langkah manual yang disebutkan di atas."
+# =============================
+# DONE
+# =============================
+echo ""
+echo "===================================="
+echo "✅ INSTALL SELESAI (FIX VERSION)"
+echo "🌐 https://$DOMAIN"
+echo "===================================="
