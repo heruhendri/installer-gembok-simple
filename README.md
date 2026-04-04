@@ -44,7 +44,7 @@ curl -s https://raw.githubusercontent.com/heruhendri/installer-gembok-simple/ref
 Atau menggunakan wget:
 
 ```bash
-wget https://raw.githubusercontent.com/heruhendri/installer-gembok-simple/refs/heads/main/installer.sh
+wget https://raw.githubusercontent.com/heruhendri/installer-gembok-simple/refs/heads/multi/installer.sh
 chmod +x installer.sh
 ./installer.sh
 ```
