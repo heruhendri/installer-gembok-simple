@@ -38,7 +38,7 @@ Pastikan server memenuhi syarat berikut:
 Jalankan perintah berikut di VPS:
 
 ```bash
-curl -s https://raw.githubusercontent.com/heruhendri/installer-gembok-simple/refs/heads/main/installer.sh | bash
+curl -s https://raw.githubusercontent.com/heruhendri/installer-gembok-simple/refs/heads/multi/installer.sh | bash
 ```
 
 Atau jika tidak menggunakan root:
