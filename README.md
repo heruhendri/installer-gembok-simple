@@ -41,10 +41,12 @@ Jalankan perintah berikut di VPS:
 curl -s https://raw.githubusercontent.com/heruhendri/installer-gembok-simple/refs/heads/multi/installer.sh | bash
 ```
 
-Atau jika tidak menggunakan root:
+Atau menggunakan wget:
 
 ```bash
-curl -s https://raw.githubusercontent.com/heruhendri/installer-gembok-simple/refs/heads/main/installer.sh | sudo bash
+wget https://raw.githubusercontent.com/heruhendri/installer-gembok-simple/refs/heads/main/installer.sh
+chmod +x installer.sh
+./installer.sh
 ```
 
 Metode ini umum digunakan untuk menjalankan installer langsung dari internet menggunakan `curl` dan pipe ke `bash` ([LoRaWAN Portal][1])
